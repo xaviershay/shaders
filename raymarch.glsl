@@ -1,14 +1,13 @@
 // https://www.shadertoy.com/view/XlGBW3
+#pragma use "sdf.glsl"
 
 #define MAX_STEPS 100
 #define MAX_DIST 100
 #define SURF_DIST 0.01
 
 float map(in vec3 p) {
-  vec4 s = vec4(0, 1, 6, 1);
-
-  float d;
-  d = length(p - s.xyz) - s.w;
+  float d = 1000000000;
+  d = min(d, sdSphere(p, vec3(0, 1, 6), 1.0));
 
   return d;
 }
