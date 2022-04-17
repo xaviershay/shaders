@@ -70,17 +70,35 @@ vec4 map(in vec3 p) {
 }
 
 
+float calcSoftshadow( in vec3 ro, in vec3 rd, in float k )
+{
+    float res = 1.0;
+
+    float tmax = MAX_DIST;
+    float t    = 0.001;
+    for( int i=0; i<MAX_STEPS; i++ )
+    {
+        float h = map( ro + rd*t ).x;
+        res = min( res, k*h/t );
+        t += clamp( h, 0.012, 0.2 );
+        if( res<0.001 || t>tmax ) break;
+    }
+
+    return clamp( res, 0.0, 1.0 );
+}
+
 vec4 intersect( in vec3 ro, in vec3 rd )
 {
     vec4 res = vec4(-1.0);
 
     float t = 0.001;
     float tmax = 15.0;
-    for( int i=0; i<128 && t<tmax; i++ )
+    for( int i=0; i<128; i++ )
     {
         vec4 h = map(ro+t*rd);
         if( h.x<0.001 ) { res=vec4(t,h.yzw); break; }
         t += h.x;
+        if (t >= tmax) break;
     }
 
     return res;
@@ -98,34 +116,6 @@ vec3 normal(in vec3 p) {
   return normalize(n);
 }
 
-float calcAO( in vec3 pos, in vec3 nor, in float time )
-{
-	float occ = 0.0;
-  float sca = 1.0;
-  for( int i=0; i<5; i++ )
-  {
-      float h = 0.01 + 0.12*float(i)/4.0;
-      float d = map( pos+h*nor ).x;
-      occ += (h-d)*sca;
-      sca *= 0.95;
-  }
-  return clamp( 1.0 - 3.0*occ, 0.0, 1.0 );
-}
-
-float light(in vec3 p) {
-  vec3 lightPos = vec3(0, 5, 0);
-  lightPos.xz += vec2(sin(iTime), cos(iTime)) * 2.0;
-  vec3 l = normalize(lightPos - p);
-  vec3 n = normal(p);
-
-  float occ = calcAO( p, n, iTime );
-
-  float dif = clamp(dot(n, l), 0.0, 1.0);
-  float d = intersect(p+n*SURF_DIST*2.0, l).w;
-  if (d > 0.0 && d < length(lightPos - p)) dif *= 0.1;
-  return dif;
-}
-
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
 
@@ -138,10 +128,42 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   float d = intersect(ro, rd).x;
 
   if (d > 0.0) {
-    vec3 p = ro + rd * d;
+    vec3 pos = ro + rd * d;
+    vec3 nor = normal(pos);
 
-    float dif = light(p);
-    col += vec3(dif);
+    vec3 mate = vec3(0.5, 0.5, 0.5);
+    vec3  f0 = mate;
+
+    float ks = clamp(0.75,0.0,1.0);
+    float kd = (1.0-ks)*0.125;
+//    float dif = light(p);
+//    col += vec3(dif);
+
+    // Top light
+    // {
+    //   vec3  ref = reflect(rd,nor);
+    //   float fre = clamp(1.0+dot(nor,rd),0.0,1.0);
+    //   float sha = 1.0;
+    //   col += kd*mate*25.0*vec3(0.19,0.22,0.24)*(0.6 + 0.4*nor.y)*sha;
+    //   col += ks*     25.0*vec3(0.19,0.22,0.24)*sha*smoothstep( -1.0+1.5, 1.0-0.4, ref.y ) * (f0 + (1.0-f0)*pow(fre,5.0));
+    // }
+
+    // origin light
+    // TODO: Move with camera
+    {
+// side
+      vec3 lightPos = vec3(0, 5, -10.0) + ro;
+      lightPos.xz += vec2(sin(iTime), cos(iTime) * 0.5);
+      vec3 l = normalize(lightPos - pos);
+
+      float dif = clamp(dot(nor, l), 0.0, 1.0);
+
+
+      float shadow = clamp(calcSoftshadow(pos+nor*SURF_DIST*2.0, l, 80.0), 0.1, 1.0);
+      col += dif * shadow;
+    }
+    // TODO: Metallic lighting
+
   }
   col = pow(col, vec3(0.4545)); // gamma correction
   fragColor = vec4(col, 1.0);
