@@ -5,7 +5,7 @@
 #define MAX_DIST 100.0
 #define SURF_DIST 0.01
 #define PI 3.14159
-#define CAM_SPEED 1.0
+#define CAM_SPEED 0.7
 #define SCENE_LENGTH 50.0
 #define GATE_SPACING 3.0
 
@@ -116,11 +116,15 @@ vec3 normal(in vec3 p) {
   return normalize(n);
 }
 
+float sceneTime() {
+  return mod(iTime, SCENE_LENGTH);
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
 
-  vec3 ro = vec3(0.0, 0.0, mod(iTime, SCENE_LENGTH) * (1.0 / CAM_SPEED));
-  vec3 rd = normalize(vec3(uv.x, uv.y, 1.0));
+  vec3 ro = vec3(sin(sceneTime() / 3.0) * 0.1, sin(sceneTime() / 4.0) * 0.1, sceneTime() * (1.0 / CAM_SPEED));
+  vec3 rd = normalize(vec3(uv.x + sin(sceneTime() / 2.0) * 0.1, uv.y + sin(sceneTime() / 2.3) * 0.09, 1.0));
 
   // background
   vec3 col = vec3(1.0+rd.y)*0.00;
