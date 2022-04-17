@@ -1,13 +1,6 @@
 // https://www.shadertoy.com/view/XlGBW3
 // #pragma use "sdf.glsl"
 
-float sdCapsule( vec3 p, vec3 a, vec3 b, float r )
-{
-  vec3 pa = p - a, ba = b - a;
-  float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
-  return length( pa - ba*h ) - r;
-}
-
 #define MAX_STEPS 100
 #define MAX_DIST 100.0
 #define SURF_DIST 0.01
@@ -20,11 +13,12 @@ vec3 opTranslate(in vec3 p, in vec3 a)
 {
   return p - a;
 }
-// Create multiple copies of an object - https://iquilezles.org/articles/distfunctions
-vec3 opRepLimZ( in vec3 p, in float s, in vec3 lima, in vec3 limb )
+
+float sdCapsule( vec3 p, vec3 a, vec3 b, float r )
 {
-    p.z = p.z-s*clamp(round(p.z/s),lima.z, limb.z);
-    return p;
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+  return length( pa - ba*h ) - r;
 }
 
 float sdTriangle(in vec3 p, in float t)
@@ -67,49 +61,39 @@ vec4 map(in vec3 p) {
     float spinDelta = 7.0;
     float spinTime = abs(sin((tIndex + i) * 453.32 + 3563.0)) * spinDelta;
     float tAngle = sin((tIndex + i) * 2354.0 + 23.0) * 0.1;
-    tAngle = inOutBack(0.0, 0.7, mod(iTime, spinDelta + 0.7) - spinTime) * 2.0 * PI / 3.0 + tAngle;
+    tAngle = inOutBack(0.0, 0.7, mod(iTime, spinDelta + 0.7) - spinTime)
+      * 2.0 * PI / 3.0 + tAngle;
     d = min(d, sdTriangle(opTranslate(p, tPos), tAngle));
   }
-  /*
-  vec3 q = p;
-  vec3 r = opRepLimZ(q,3.0,vec3(-10,10,0) + cam,vec3(10, 10, 6) + cam);
-  float triangleIndex = floor((p.z - 1.0) / GATE_SPACING);
-  //float triangleOffset = sin(triangleIndex * 5.0 + 3.0) * 0.1;
 
-  float triangleOffset = sin(iTime) * 0.1;
-  float spinTime = abs(sin(triangleIndex * 453.32 + 3563.0)) * 5.0;
-
-  d = min(d, sdTriangle(
-        r,
-        PI / 2.0 + triangleOffset
-        // inOutBack(0.0, 0.7, mod(iTime, 6.0) - spinTime) * 2.0 * PI / 3.0 + triangleOffset
-      ));
-
-      */
-  return vec4(p, d);
+  return vec4(d, p);
 }
 
-float march(vec3 ro, vec3 rd) {
-  float d0 = 0.0;
-  float dS = 0.0;
 
-  for (int i = 0; i < MAX_STEPS; i++) {
-    vec3 p = ro + rd * d0;
-    dS = map(p).w;
-    d0 += dS;
-    if (d0 > MAX_DIST || dS < SURF_DIST) break;
-  }
-  return d0;
+vec4 intersect( in vec3 ro, in vec3 rd )
+{
+    vec4 res = vec4(-1.0);
+
+    float t = 0.001;
+    float tmax = 15.0;
+    for( int i=0; i<128 && t<tmax; i++ )
+    {
+        vec4 h = map(ro+t*rd);
+        if( h.x<0.001 ) { res=vec4(t,h.yzw); break; }
+        t += h.x;
+    }
+
+    return res;
 }
 
 vec3 normal(in vec3 p) {
-  float d = map(p).w;
+  float d = map(p).x;
   vec2 e = vec2(0.01, 0.0);
 
   vec3 n = d - vec3(
-      map(p - e.xyy).w,
-      map(p - e.yxy).w,
-      map(p - e.yyx).w);
+      map(p - e.xyy).x,
+      map(p - e.yxy).x,
+      map(p - e.yyx).x);
 
   return normalize(n);
 }
@@ -121,7 +105,7 @@ float calcAO( in vec3 pos, in vec3 nor, in float time )
   for( int i=0; i<5; i++ )
   {
       float h = 0.01 + 0.12*float(i)/4.0;
-      float d = map( pos+h*nor ).w;
+      float d = map( pos+h*nor ).x;
       occ += (h-d)*sca;
       sca *= 0.95;
   }
@@ -137,8 +121,8 @@ float light(in vec3 p) {
   float occ = calcAO( p, n, iTime );
 
   float dif = clamp(dot(n, l), 0.0, 1.0);
-  float d = march(p+n*SURF_DIST*2.0, l);
-  if (d < length(lightPos - p)) dif *= 0.1;
+  float d = intersect(p+n*SURF_DIST*2.0, l).w;
+  if (d > 0.0 && d < length(lightPos - p)) dif *= 0.1;
   return dif;
 }
 
@@ -148,12 +132,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec3 ro = vec3(0.0, 0.0, mod(iTime, SCENE_LENGTH) * (1.0 / CAM_SPEED));
   vec3 rd = normalize(vec3(uv.x, uv.y, 1.0));
 
-  float d = march(ro, rd);
+  // background
+  vec3 col = vec3(1.0+rd.y)*0.00;
 
-  vec3 p = ro + rd * d;
+  float d = intersect(ro, rd).x;
 
-  float dif = light(p);
-  vec3 col = vec3(dif);
+  if (d > 0.0) {
+    vec3 p = ro + rd * d;
+
+    float dif = light(p);
+    col += vec3(dif);
+  }
   col = pow(col, vec3(0.4545)); // gamma correction
   fragColor = vec4(col, 1.0);
 }
