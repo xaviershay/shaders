@@ -1,12 +1,20 @@
 // https://www.shadertoy.com/view/XlGBW3
-#pragma use "sdf.glsl"
+// #pragma use "sdf.glsl"
+
+float sdCapsule( vec3 p, vec3 a, vec3 b, float r )
+{
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+  return length( pa - ba*h ) - r;
+}
 
 #define MAX_STEPS 100
 #define MAX_DIST 100.0
 #define SURF_DIST 0.01
 #define PI 3.14159
 #define CAM_SPEED 1.0
-#define SCENE_LENGTH 5.0
+#define SCENE_LENGTH 50.0
+#define GATE_SPACING 3.0
 
 vec3 opTranslate(in vec3 p, in vec3 a)
 {
@@ -34,56 +42,51 @@ float sdTriangle(in vec3 p, in float t)
   return d;
 }
 
-float easeInOutElastic( float edge0, float edge1, float x ) {
-  const float c5 = (2 * PI) / 4.5;
-
-  x = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-
-  return x <= 0.0
-    ? 0.0
-    : x >= 1.0
-    ? 1.0
-    : x < 0.5
-    ? -(pow(2, 20.0 * x - 10.0) * sin((20.0 * x - 11.125) * c5)) / 2.0
-    : (pow(2, -20.0 * x + 10.0) * sin((20.0 * x - 11.125) * c5)) / 2.0 + 1.0;
-}
-
 // https://github.com/Michaelangel007/easing
 float inOutBack( float edge0, float edge1, float p) {
   p = clamp((p - edge0) / (edge1 - edge0), 0.0, 1.0);
 
-  float m=p-1;
-  float t=p*2;
+  float m=p-1.0;
+  float t=p*2.0;
   float k = 1.70158 * 1.525;
 
-  if (p < 0.5) return p*t*(t*(k+1) - k);
-  else return 1 + 2*m*m*(2*m*(k+1) + k);
+  if (p < 0.5) return p*t*(t*(k+1.0) - k);
+  else return 1.0 + 2.0*m*m*(2.0*m*(k+1.0) + k);
 }
 
-float mySmoothstep(float edge0, float edge1, float x) {
-
-    // Scale the value of x respect to edge0 edge1, and clamp in the interval [0.0, 1.0]
-  	x = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-
-    // Evaluate a polinomial
-  	return x * x * (3. - 2. * x);
-}
-
-float map(in vec3 p) {
+vec4 map(in vec3 p) {
   float d = MAX_DIST;
   // This needs to match camera speed but then be divided by space between each
   // triangle.
-  vec3 cam = vec3(0, 0, floor(mod(iTime, SCENE_LENGTH) * (1.0 / CAM_SPEED) / 3.0));
+  float tIndex = floor(mod(iTime, SCENE_LENGTH) * (1.0 / CAM_SPEED) / GATE_SPACING) - 6.0;
+  vec3 tPos = vec3(0, 0, tIndex * GATE_SPACING);
 
+  for (float i = 0.0; i < 12.0; i++) {
+    tPos += vec3(0.0, 0.0, GATE_SPACING);
+
+    float spinDelta = 7.0;
+    float spinTime = abs(sin((tIndex + i) * 453.32 + 3563.0)) * spinDelta;
+    float tAngle = sin((tIndex + i) * 2354.0 + 23.0) * 0.1;
+    tAngle = inOutBack(0.0, 0.7, mod(iTime, spinDelta + 0.7) - spinTime) * 2.0 * PI / 3.0 + tAngle;
+    d = min(d, sdTriangle(opTranslate(p, tPos), tAngle));
+  }
+  /*
   vec3 q = p;
   vec3 r = opRepLimZ(q,3.0,vec3(-10,10,0) + cam,vec3(10, 10, 6) + cam);
-  //d = min(d, sdTriangle(r, 2 * PI + sin(p.z)*0.08));
-  d = min(d, sdTriangle(r,
-    floor((p.z - 1.0) / 3.0) == 2.0 ?
-      inOutBack(0.0, 0.7, mod(iTime, SCENE_LENGTH)) * 2.0 * PI / 3.0 :
-      (2 * PI + sin(p.z)*0.08)));
+  float triangleIndex = floor((p.z - 1.0) / GATE_SPACING);
+  //float triangleOffset = sin(triangleIndex * 5.0 + 3.0) * 0.1;
 
-  return d;
+  float triangleOffset = sin(iTime) * 0.1;
+  float spinTime = abs(sin(triangleIndex * 453.32 + 3563.0)) * 5.0;
+
+  d = min(d, sdTriangle(
+        r,
+        PI / 2.0 + triangleOffset
+        // inOutBack(0.0, 0.7, mod(iTime, 6.0) - spinTime) * 2.0 * PI / 3.0 + triangleOffset
+      ));
+
+      */
+  return vec4(p, d);
 }
 
 float march(vec3 ro, vec3 rd) {
@@ -92,7 +95,7 @@ float march(vec3 ro, vec3 rd) {
 
   for (int i = 0; i < MAX_STEPS; i++) {
     vec3 p = ro + rd * d0;
-    dS = map(p);
+    dS = map(p).w;
     d0 += dS;
     if (d0 > MAX_DIST || dS < SURF_DIST) break;
   }
@@ -100,22 +103,38 @@ float march(vec3 ro, vec3 rd) {
 }
 
 vec3 normal(in vec3 p) {
-  float d = map(p);
+  float d = map(p).w;
   vec2 e = vec2(0.01, 0.0);
 
   vec3 n = d - vec3(
-      map(p - e.xyy),
-      map(p - e.yxy),
-      map(p - e.yyx));
+      map(p - e.xyy).w,
+      map(p - e.yxy).w,
+      map(p - e.yyx).w);
 
   return normalize(n);
 }
 
+float calcAO( in vec3 pos, in vec3 nor, in float time )
+{
+	float occ = 0.0;
+  float sca = 1.0;
+  for( int i=0; i<5; i++ )
+  {
+      float h = 0.01 + 0.12*float(i)/4.0;
+      float d = map( pos+h*nor ).w;
+      occ += (h-d)*sca;
+      sca *= 0.95;
+  }
+  return clamp( 1.0 - 3.0*occ, 0.0, 1.0 );
+}
+
 float light(in vec3 p) {
-  vec3 lightPos = vec3(0, 5, 6);
+  vec3 lightPos = vec3(0, 5, 0);
   lightPos.xz += vec2(sin(iTime), cos(iTime)) * 2.0;
   vec3 l = normalize(lightPos - p);
   vec3 n = normal(p);
+
+  float occ = calcAO( p, n, iTime );
 
   float dif = clamp(dot(n, l), 0.0, 1.0);
   float d = march(p+n*SURF_DIST*2.0, l);
