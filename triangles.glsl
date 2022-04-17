@@ -5,7 +5,7 @@
 #define MAX_DIST 100.0
 #define SURF_DIST 0.01
 #define PI 3.14159
-#define CAM_SPEED 0.7
+#define CAM_SPEED 700000.7
 #define SCENE_LENGTH 50.0
 #define GATE_SPACING 3.0
 
@@ -29,11 +29,15 @@ float sdTriangle(in vec3 p, in float t)
   vec2 b = vec2(cos(PI / 2.0 + t + 2.0 * PI / 3.0), sin(PI / 2.0 + t + 2.0 * PI / 3.0));
   vec2 c = vec2(cos(PI / 2.0 + t + 4.0 * PI / 3.0), sin(PI / 2.0 + t + 4.0 * PI / 3.0));
 
-  d = min(d, sdCapsule(p, vec3(a, 0), vec3(b, 0), 0.05));
-  d = min(d, sdCapsule(p, vec3(b, 0), vec3(c, 0), 0.05));
-  d = min(d, sdCapsule(p, vec3(c, 0), vec3(a, 0), 0.05));
+  d = min(d, sdCapsule(p, vec3(a, 0), vec3(b, 0), 0.04));
+  d = min(d, sdCapsule(p, vec3(b, 0), vec3(c, 0), 0.04));
+  d = min(d, sdCapsule(p, vec3(c, 0), vec3(a, 0), 0.04));
 
   return d;
+}
+
+float sdSphere(in vec3 p, in vec3 o, in float r) {
+  return length(p - o) - r;
 }
 
 // https://github.com/Michaelangel007/easing
@@ -50,6 +54,8 @@ float inOutBack( float edge0, float edge1, float p) {
 
 vec4 map(in vec3 p) {
   float d = MAX_DIST;
+  //d = sdSphere( p, vec3(0, 0, 5.0), 2.0 );
+  //return vec4( d, p);
   // This needs to match camera speed but then be divided by space between each
   // triangle.
   float tIndex = floor(mod(iTime, SCENE_LENGTH) * (1.0 / CAM_SPEED) / GATE_SPACING) - 6.0;
@@ -120,6 +126,20 @@ float sceneTime() {
   return mod(iTime, SCENE_LENGTH);
 }
 
+// https://docs.chaos.com/display/OSLShaders/Complex+Fresnel+shader
+float fresnel(float n, float k, float c) {
+    float k2=k*k;
+    float rs_num = n*n + k2 - 2*n*c + c*c;
+    float rs_den = n*n + k2 + 2*n*c + c*c;
+    float rs = rs_num/ rs_den ;
+
+    float rp_num = (n*n + k2)*c*c - 2*n*c + 1;
+    float rp_den = (n*n + k2)*c*c + 2*n*c + 1;
+    float rp = rp_num/ rp_den ;
+
+    return clamp(0.5*( rs+rp ), 0.0, 1.0);
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
 
@@ -135,11 +155,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 pos = ro + rd * d;
     vec3 nor = normal(pos);
 
-    vec3 mate = vec3(0.5, 0.5, 0.5);
-    vec3  f0 = mate;
 
-    float ks = clamp(0.75,0.0,1.0);
-    float kd = (1.0-ks)*0.125;
 //    float dif = light(p);
 //    col += vec3(dif);
 
@@ -152,21 +168,61 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     //   col += ks*     25.0*vec3(0.19,0.22,0.24)*sha*smoothstep( -1.0+1.5, 1.0-0.4, ref.y ) * (f0 + (1.0-f0)*pow(fre,5.0));
     // }
 
-    // origin light
-    // TODO: Move with camera
-    {
-// side
-      vec3 lightPos = vec3(0, 5, -10.0) + ro;
-      lightPos.xz += vec2(sin(iTime), cos(iTime) * 0.5);
-      vec3 l = normalize(lightPos - pos);
+    //vec3 mate = vec3(0.392, 0.051, 0.078);
+    ////vec3  f0 = mate;
+    //float ks = clamp(0.75,0.0,1.0);
+    //float kd = (1.0-ks)*0.125;
+    //vec3 f0 = vec3(0.8);
 
-      float dif = clamp(dot(nor, l), 0.0, 1.0);
+    //// origin light
+    //{
+    //  vec3 lightPos = vec3(0, 5, -10.0) + ro;
+    //  lightPos.xz += vec2(sin(iTime), cos(iTime) * 0.5);
+    //  vec3 l = normalize(lightPos - pos);
 
+    //  float dif = 0.5 + 0.5 * dot(nor, l);
+    //  dif *= 0.3;
+    //  vec3 ref = reflect(rd,nor);
+    //  //vec3 spe = vec3(0.9) * smoothstep(0.8, 0.9, dot(ref, l));
+    //  //float fre = clamp(1.0 + dot(rd, nor), 0.0, 1.0);
+    //  //spe *= f0 + (1.0 - f0)*pow(fre, 5.0);
+    //  //spe *= 7.0;
+    //  vec3 hal = normalize(l - rd);
+    //  float spe = clamp(dot(hal, nor), 0.0, 1.0);
+    //  spe = pow(spe, 32.0);
 
-      float shadow = clamp(calcSoftshadow(pos+nor*SURF_DIST*2.0, l, 80.0), 0.1, 1.0);
-      col += dif * shadow;
-    }
-    // TODO: Metallic lighting
+    //  float shadow = clamp(calcSoftshadow(pos+nor*SURF_DIST*0.001, l, 80.0), 0.1, 1.0);
+    //  col += dif * mate;
+    //  col += spe * dif;
+    //  col *= shadow;
+    //  //col = vec3(spe);
+    //}
+
+    //{
+    //  vec3 lig = normalize(vec3(2.0, 0.1, 1.0));
+    //  //vec3 lColor = vec3(1.0,0.6, 0.3);
+    //  vec3 lColor = vec3(0.3,0.6, 1.0);
+
+    //  float dif = clamp(dot(nor, lig), 0.0, 1.0);
+
+    //  vec3 hal = normalize(lig - rd);
+    //  float fre = clamp(1.0 + dot(hal, lig), 0.0, 1.0);
+    //  vec3 spe = vec3(1.0) * pow(clamp(dot(hal, nor), 0.0, 1.0), 32.0);
+    //  spe *= f0 + (1.0 - f0)*pow(fre, 5.0);
+    //  col += dif * lColor * mate;
+    //  col += spe * lColor * dif;
+    //}
+    //// TODO: Metallic lighting
+
+    //vec3 n=vec3(0.27105, 0.67693, 1.3164);
+    //vec3 k=vec3(3.6092, 2.6247, 2.2921);
+    //vec3 lig = normalize(vec3(0, 5, -10.0) + ro);
+    //float thetaCos = abs(dot(-lig,nor));
+    //float red=fresnel(n[0], k[0], thetaCos);
+    //float green=fresnel(n[1], k[1], thetaCos);
+    //float blue=fresnel(n[2], k[2], thetaCos);
+    //col = vec3(red, green, blue);
+    col = vec3(1.0);
 
   }
   col = pow(col, vec3(0.4545)); // gamma correction
