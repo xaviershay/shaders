@@ -5,7 +5,7 @@
 #define MAX_DIST 100.0
 #define SURF_DIST 0.01
 #define PI 3.14159
-#define CAM_SPEED 700000.7
+#define CAM_SPEED 0.7
 #define SCENE_LENGTH 50.0
 #define GATE_SPACING 3.0
 
@@ -29,9 +29,9 @@ float sdTriangle(in vec3 p, in float t)
   vec2 b = vec2(cos(PI / 2.0 + t + 2.0 * PI / 3.0), sin(PI / 2.0 + t + 2.0 * PI / 3.0));
   vec2 c = vec2(cos(PI / 2.0 + t + 4.0 * PI / 3.0), sin(PI / 2.0 + t + 4.0 * PI / 3.0));
 
-  d = min(d, sdCapsule(p, vec3(a, 0), vec3(b, 0), 0.04));
-  d = min(d, sdCapsule(p, vec3(b, 0), vec3(c, 0), 0.04));
-  d = min(d, sdCapsule(p, vec3(c, 0), vec3(a, 0), 0.04));
+  d = min(d, sdCapsule(p, vec3(a, 0), vec3(b, 0), 0.03));
+  d = min(d, sdCapsule(p, vec3(b, 0), vec3(c, 0), 0.03));
+  d = min(d, sdCapsule(p, vec3(c, 0), vec3(a, 0), 0.03));
 
   return d;
 }
@@ -69,6 +69,7 @@ vec4 map(in vec3 p) {
     float tAngle = sin((tIndex + i) * 2354.0 + 23.0) * 0.1;
     tAngle = inOutBack(0.0, 0.7, mod(iTime, spinDelta + 0.7) - spinTime)
       * 2.0 * PI / 3.0 + tAngle;
+    tAngle += sin(iTime * smoothstep(0.3, 0.6, sin((tIndex + i) * 356.4))) * 0.1;
     d = min(d, sdTriangle(opTranslate(p, tPos), tAngle));
   }
 
@@ -93,7 +94,13 @@ float calcSoftshadow( in vec3 ro, in vec3 rd, in float k )
     return clamp( res, 0.0, 1.0 );
 }
 
-vec4 intersect( in vec3 ro, in vec3 rd )
+
+//https://www.shadertoy.com/view/3s3GDn
+float getGlow(float dist, float radius, float intensity){
+	return pow(radius / max(dist, 1e-6), intensity);
+}
+
+vec4 intersect( in vec3 ro, in vec3 rd, inout float glow )
 {
     vec4 res = vec4(-1.0);
 
@@ -102,7 +109,14 @@ vec4 intersect( in vec3 ro, in vec3 rd )
     for( int i=0; i<128; i++ )
     {
         vec4 h = map(ro+t*rd);
-        if( h.x<0.001 ) { res=vec4(t,h.yzw); break; }
+        // Calculate the glow at the current distance using the distance based
+        // glow function. Accumulate this value over the whole view ray The
+        // smaller the step size, the smoother the final result
+        //
+        // This means everything will glow equally/the same color.
+        glow += getGlow(h.x, 1e-3, 0.85);
+
+        if( h.x<1e-6 ) { res=vec4(t,h.yzw); break; }
         t += h.x;
         if (t >= tmax) break;
     }
@@ -140,6 +154,11 @@ float fresnel(float n, float k, float c) {
     return clamp(0.5*( rs+rp ), 0.0, 1.0);
 }
 
+//https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+vec3 ACESFilm(vec3 x){
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
 
@@ -149,11 +168,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // background
   vec3 col = vec3(1.0+rd.y)*0.00;
 
-  float d = intersect(ro, rd).x;
+  float glow = 0.0;
+  float d = intersect(ro, rd, glow).x;
+
+  //vec3 glowColour = vec3(0.2, 0.5, 1.0);
+  //vec3 glowColour = vec3(0.502, 0.055, 0.075);
+  vec3 glowColour = vec3(1.0,0.05,0.3);
+  col = glow * glowColour;
 
   if (d > 0.0) {
     vec3 pos = ro + rd * d;
     vec3 nor = normal(pos);
+
 
 
 //    float dif = light(p);
@@ -222,9 +248,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     //float green=fresnel(n[1], k[1], thetaCos);
     //float blue=fresnel(n[2], k[2], thetaCos);
     //col = vec3(red, green, blue);
-    col = vec3(1.0);
 
   }
+  col = ACESFilm(col);
   col = pow(col, vec3(0.4545)); // gamma correction
   fragColor = vec4(col, 1.0);
 }
