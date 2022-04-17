@@ -1,0 +1,1 @@
+\cos\left(\frac{3\pi}{2}\left(\left(\left(2x\right)^{7}+1\right)\right)\right)\cdot\left(\cos\left(2\pi x\right)\cdot0.5+0.5\right)+\left(\left(x+0.5\right)^{2}\cdot\left(3-2\left(x+0.5\right)\right)\right)

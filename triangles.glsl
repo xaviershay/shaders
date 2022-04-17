@@ -21,6 +21,14 @@ float sdCapsule( vec3 p, vec3 a, vec3 b, float r )
   return length( pa - ba*h ) - r;
 }
 
+bool isnan( float val )
+{
+  return ( val < 0.0 || 0.0 < val || val == 0.0 ) ? false : true;
+  // important: some nVidias failed to cope with version below.
+  // Probably wrong optimization.
+  /*return ( val <= 0.0 || 0.0 <= val ) ? false : true;*/
+}
+
 float sdTriangle(in vec3 p, in float t)
 {
   float d = MAX_DIST;
@@ -36,6 +44,18 @@ float sdTriangle(in vec3 p, in float t)
   return d;
 }
 
+float ease( float edge0, float edge1, float p) {
+  p = clamp((p - edge0) / (edge1 - edge0), 0.0, 1.0) - 0.5;
+
+  float baseCurve = cos(3 * PI / 2.0 * ((p < 0.0 ? -pow(-2.0*p, 7) : pow(2.0 * p, 7)) + 1));
+  float shapeCurve = pow(cos(2 * PI * p) * 0.5 + 0.5, 1);
+  float smoothCurve = pow(p + 0.5, 2) * (3.0 - 2.0 * (p + 0.5));
+
+  float allTogether = baseCurve * shapeCurve + smoothCurve;
+
+  if (isnan(allTogether)) return 0.0;
+  return allTogether;
+}
 // https://github.com/Michaelangel007/easing
 float inOutBack( float edge0, float edge1, float p) {
   p = clamp((p - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -61,9 +81,10 @@ vec4 map(in vec3 p) {
     float spinDelta = 7.0;
     float spinTime = abs(sin((tIndex + i) * 453.32 + 3563.0)) * spinDelta;
     float tAngle = sin((tIndex + i) * 2354.0 + 23.0) * 0.1;
-    tAngle = inOutBack(0.0, 0.7, mod(iTime, spinDelta + 0.7) - spinTime)
-      * 2.0 * PI / 3.0 + tAngle;
-    d = min(d, sdTriangle(opTranslate(p, tPos), tAngle));
+    float tEase = inOutBack(0.0, 0.8, mod(iTime, spinDelta + 0.7) - spinTime);
+    //float tEase = ease(0.0, 1.7, iTime);
+    tAngle = tEase * 2.0 * PI / 3.0 + tAngle;
+    d = min(d, sdTriangle(opTranslate(p, tPos), abs(tAngle)));
   }
 
   return vec4(d, p);
